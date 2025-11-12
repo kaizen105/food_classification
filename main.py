@@ -1,152 +1,174 @@
 import streamlit as st
 from ultralytics import YOLO
+from transformers import pipeline
 from PIL import Image
 import io
+import numpy as np
 
 # --- PAGE CONFIG ---
-# This MUST be the first Streamlit command.
 st.set_page_config(
-    page_title="What's Cooking? 🥦",
-    page_icon="🥦",
+    page_title="Food AI 2.0: What & Where",
+    page_icon="🧠",
     layout="wide",
 )
 
-# --- MINIMAL CSS INJECTION ---
-# This injects the CSS for styling.
+# --- "GOOD CSS" (Styling) ---
 def load_css():
     st.markdown(
         """
         <style>
         /* Main app container */
         [data-testid="stAppViewContainer"] {
-            /* This is a fallback, the config.toml sets the main background */
             background-color: #0E1117;
         }
 
         /* Title */
         h1 {
-            color: #4CAF50; /* Green color from your theme */
+            color: #00A36C; /* A fresh green */
             text-align: center;
             font-weight: bold;
+            font-family: 'Arial', sans-serif;
         }
         
-        /* Prediction box */
-        .prediction-box {
-            border: 2px solid #4CAF50;
+        /* Subheaders for results */
+        h2 {
+            color: #FAFAFA;
+            border-bottom: 2px solid #00A36C;
+            padding-bottom: 5px;
+        }
+
+        /* Result box for classification */
+        .result-box {
+            border: 2px solid #00A36C;
             border-radius: 10px;
-            padding: 20px;
+            padding: 25px;
             text-align: center;
-            font-size: 1.5em; /* 1.5x normal size */
-            margin-top: 20px;
+            font-size: 1.2em;
+            background-color: #1c1f2b;
+            height: 250px; /* Fixed height */
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
         }
         
-        .prediction-box strong {
-            font-size: 1.7em;
-            color: #4CAF50; /* Green */
+        .result-box p {
+            font-size: 1.2em;
+            margin: 0;
+        }
+        
+        .result-box strong {
+            font-size: 2.0em; /* Bigger font for the food name */
+            color: #00A36C; /* Green */
+            display: block; /* Makes it take its own line */
+            margin-top: 10px;
+        }
+        
+        .confidence {
+            font-size: 1.0em;
+            color: #FAFAFA;
         }
         </style>
         """,
         unsafe_allow_html=True,
     )
 
-# --- MODEL LOADING ---
-# @st.cache_resource is the "genius" part. It tells Streamlit to
-# load this model ONCE and keep it in memory, so it's not
-# re-loading on every user interaction.
+# --- MODEL LOADING (Cached so it only runs once) ---
+
 @st.cache_resource
-def load_yolo_model():
-    print("--- Loading OpenVINO Model (This happens only once) ---")
-    # We MUST tell it task='classify'
-    model = YOLO('best_openvino_model/', task='classify')
-    print("--- Model Loaded! ---")
+def load_classifier():
+    print("--- Loading 'nateraw/food' (101-Class) Model ---")
+    classifier = pipeline("image-classification", model="nateraw/food")
+    print("--- Classifier Loaded! ---")
+    return classifier
+
+@st.cache_resource
+def load_detector():
+    print("--- Loading 'yolov8n.pt' (Detector) Model ---")
+    # This is the pre-trained model that knows 80 objects (incl. food)
+    model = YOLO('yolov8n.pt') 
+    print("--- Detector Loaded! ---")
     return model
 
-# --- PREDICTION FUNCTION ---
-# A helper function to make predictions and return the result
-def predict(model, image):
-    # Run prediction
-    results = model(image)
+# --- PREDICTION FUNCTIONS ---
 
-    # Get the results
-    result = results[0]
-    names = result.names
-    top1_index = result.probs.top1
-    top1_prob = result.probs.top1conf
+def get_classification(classifier, image):
+    """Gets the top classification guess."""
+    results = classifier(image)
+    top_guess = results[0]
     
-    best_guess_name = names[top1_index]
-    confidence = top1_prob.item() * 100
+    label = top_guess['label'].replace("_", " ").title()
+    confidence = top_guess['score'] * 100
+    return label, confidence
+
+def get_detection_image(detector, image):
+    """Runs detection and returns the image with boxes drawn on it."""
+    # Convert PIL Image to numpy array
+    img_np = np.array(image)
     
-    return best_guess_name, confidence
+    # Run detection
+    results = detector(img_np)
+    
+    # Get the first result and plot it (draws boxes)
+    annotated_image_np = results[0].plot()
+    
+    # Convert the annotated numpy array (OpenCV BGR) back to PIL (RGB)
+    annotated_image_pil = Image.fromarray(annotated_image_np[..., ::-1])
+    return annotated_image_pil
 
 # --- MAIN APP ---
 def main():
-    # Load our CSS styles
     load_css()
     
-    # Load the cached model
-    model = load_yolo_model()
+    # Load models
+    classifier = load_classifier()
+    detector = load_detector()
     
-    st.title("🥦 What's Cooking? 🥦")
-    st.write("Upload a photo or use your webcam to classify your food!")
+    st.title("🧠 Food AI 2.0: What & Where")
+    st.write("Upload an image to see what food it is (101 classes) AND where it is.")
 
-    # --- TABS FOR "CLICK" AND "UPLOAD" ---
-    tab1, tab2 = st.tabs(["📁 Upload an Image", "📸 Use Webcam"])
+    uploaded_file = st.file_uploader(
+        "Upload a food image...", 
+        type=["jpg", "jpeg", "png"]
+    )
 
-    # --- UPLOAD TAB ---
-    with tab1:
-        uploaded_file = st.file_uploader("Choose a food image...", type=["jpg", "jpeg", "png"])
+    if uploaded_file:
+        image = Image.open(uploaded_file)
         
-        if uploaded_file:
-            # Open the image using PIL (Python Imaging Library)
-            image = Image.open(uploaded_file)
-            
-            # Display the image
+        col1, col2 = st.columns(2)
+        with col1:
             st.image(image, caption="Your Uploaded Image", use_column_width=True)
-            
-            # Prediction button
-            if st.button("Classify This Image", key="upload_classify"):
-                with st.spinner("Classifying..."):
-                    # Get prediction
-                    guess, conf = predict(model, image)
-                    
-                    # Display in our styled box
+        with col2:
+            st.write("") # Just for spacing
+
+        if st.button("Analyze Food"):
+            with st.spinner("🧠 AI is thinking... (running 2 models)"):
+                
+                # Run both models
+                label, conf = get_classification(classifier, image)
+                detected_image = get_detection_image(detector, image)
+                
+                # Display results in two new columns
+                st.write("---")
+                res_col1, res_col2 = st.columns(2)
+                
+                with res_col1:
+                    st.header("1. Classification (What it is)")
                     st.markdown(
                         f"""
-                        <div class="prediction-box">
-                            I am <strong>{conf:.2f}%</strong> sure this is:
-                            <br>
-                            <strong>{guess}</strong>
+                        <div class="result-box">
+                            <p>My top guess is:</p>
+                            <strong>{label}</strong>
+                            <p class="confidence">({conf:.2f}% confidence)</p>
                         </div>
                         """,
                         unsafe_allow_html=True
                     )
 
-    # --- WEBCAM ("CLICK") TAB ---
-    with tab2:
-        img_file_buffer = st.camera_input("Click a photo of your food!")
-
-        if img_file_buffer:
-            # Open the image from the camera buffer
-            image = Image.open(img_file_buffer)
-            
-            # No need to show the image, st.camera_input does that
-            
-            # Immediately classify (no button needed for webcam)
-            with st.spinner("Classifying..."):
-                # Get prediction
-                guess, conf = predict(model, image)
-                
-                # Display in our styled box
-                st.markdown(
-                    f"""
-                    <div class="prediction-box">
-                        I am <strong>{conf:.2f}%</strong> sure this is:
-                        <br>
-                        <strong>{guess}</strong>
-                    </div>
-                    """,
-                    unsafe_allow_html=True
-                )
+                with res_col2:
+                    st.header("2. Detection (Where it is)")
+                    st.image(detected_image, 
+                             caption="Detected objects (from YOLOv8)", 
+                             use_column_width=True)
 
 if __name__ == "__main__":
     main()

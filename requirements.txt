@@ -1,6 +1,6 @@
 streamlit
-ultralytics
-openvino
+transformers
 torch
-numpy
+ultralytics
+opencv-python-headless
 Pillow
