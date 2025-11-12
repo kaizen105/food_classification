@@ -1,6 +1,9 @@
 streamlit
 transformers
 torch
-ultralytics
-opencv-python-headless
 Pillow
+tf-keras 
+ultralytics
+openvino
+opencv-python-headless
+numpy

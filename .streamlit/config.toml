@@ -1,11 +1,6 @@
 [theme]
-# This is your "green theme"
-primaryColor="#4CAF50"
-
-# This sets the default to "dark mode"
+primaryColor="#00A36C"
 base="dark"
-
-# Other dark theme colors
 backgroundColor="#0E1117"
 secondaryBackgroundColor="#1c1f2b"
 textColor="#FAFAFA"

@@ -7,8 +7,8 @@ import numpy as np
 
 # --- PAGE CONFIG ---
 st.set_page_config(
-    page_title="Food AI 2.0: What & Where",
-    page_icon="🧠",
+    page_title="Food AI: Pro vs. Avg",
+    page_icon="🤖",
     layout="wide",
 )
 
@@ -17,26 +17,19 @@ def load_css():
     st.markdown(
         """
         <style>
-        /* Main app container */
         [data-testid="stAppViewContainer"] {
             background-color: #0E1117;
         }
-
-        /* Title */
         h1 {
-            color: #00A36C; /* A fresh green */
+            color: #00A36C; /* Fresh green */
             text-align: center;
             font-weight: bold;
-            font-family: 'Arial', sans-serif;
         }
-        
-        /* Subheaders for results */
         h2 {
             color: #FAFAFA;
             border-bottom: 2px solid #00A36C;
             padding-bottom: 5px;
         }
-
         /* Result box for classification */
         .result-box {
             border: 2px solid #00A36C;
@@ -45,24 +38,21 @@ def load_css():
             text-align: center;
             font-size: 1.2em;
             background-color: #1c1f2b;
-            height: 250px; /* Fixed height */
+            height: 250px; /* Fixed height to align them */
             display: flex;
             flex-direction: column;
             justify-content: center;
         }
-        
         .result-box p {
             font-size: 1.2em;
             margin: 0;
         }
-        
         .result-box strong {
             font-size: 2.0em; /* Bigger font for the food name */
             color: #00A36C; /* Green */
-            display: block; /* Makes it take its own line */
+            display: block;
             margin-top: 10px;
         }
-        
         .confidence {
             font-size: 1.0em;
             color: #FAFAFA;
@@ -72,59 +62,55 @@ def load_css():
         unsafe_allow_html=True,
     )
 
-# --- MODEL LOADING (Cached so it only runs once) ---
-
+# --- MODEL 1: THE "PRO" (101-Class) LOADER ---
 @st.cache_resource
-def load_classifier():
+def load_pro_classifier():
     print("--- Loading 'nateraw/food' (101-Class) Model ---")
+    # This is the "genius" 0-minute model from Hugging Face
     classifier = pipeline("image-classification", model="nateraw/food")
-    print("--- Classifier Loaded! ---")
+    print("--- Pro Classifier Loaded! ---")
     return classifier
 
+# --- MODEL 2: YOUR "AVG" (11-Class) LOADER ---
 @st.cache_resource
-def load_detector():
-    print("--- Loading 'yolov8n.pt' (Detector) Model ---")
-    # This is the pre-trained model that knows 80 objects (incl. food)
-    model = YOLO('yolov8n.pt') 
-    print("--- Detector Loaded! ---")
+def load_avg_classifier():
+    print("--- Loading YOUR 'avg' (11-Class) Model ---")
+    # This is your custom-trained OpenVINO model
+    model = YOLO('best_openvino_model/', task='classify')
+    print("--- Your Model Loaded! ---")
     return model
 
 # --- PREDICTION FUNCTIONS ---
 
-def get_classification(classifier, image):
-    """Gets the top classification guess."""
+def get_pro_prediction(classifier, image):
+    """Gets the "Specific Item" guess (e.g., "Taco")"""
     results = classifier(image)
     top_guess = results[0]
-    
     label = top_guess['label'].replace("_", " ").title()
     confidence = top_guess['score'] * 100
     return label, confidence
 
-def get_detection_image(detector, image):
-    """Runs detection and returns the image with boxes drawn on it."""
-    # Convert PIL Image to numpy array
-    img_np = np.array(image)
-    
-    # Run detection
-    results = detector(img_np)
-    
-    # Get the first result and plot it (draws boxes)
-    annotated_image_np = results[0].plot()
-    
-    # Convert the annotated numpy array (OpenCV BGR) back to PIL (RGB)
-    annotated_image_pil = Image.fromarray(annotated_image_np[..., ::-1])
-    return annotated_image_pil
+def get_avg_prediction(classifier, image):
+    """Gets the "General Category" guess (e.g., "Vegetable-Fruit")"""
+    results = classifier(image)
+    result = results[0]
+    names = result.names
+    top1_index = result.probs.top1
+    top1_prob = result.probs.top1conf
+    label = names[top1_index]
+    confidence = top1_prob.item() * 100
+    return label, confidence
 
 # --- MAIN APP ---
 def main():
     load_css()
     
-    # Load models
-    classifier = load_classifier()
-    detector = load_detector()
+    # Load both models
+    pro_model = load_pro_classifier()
+    avg_model = load_avg_classifier()
     
-    st.title("🧠 Food AI 2.0: What & Where")
-    st.write("Upload an image to see what food it is (101 classes) AND where it is.")
+    st.title("🤖 Food AI: Pro vs. Avg")
+    st.write("Which model is smarter? The 'Pro' (101 classes) or 'Your Avg' (11 classes)?")
 
     uploaded_file = st.file_uploader(
         "Upload a food image...", 
@@ -134,41 +120,46 @@ def main():
     if uploaded_file:
         image = Image.open(uploaded_file)
         
-        col1, col2 = st.columns(2)
-        with col1:
-            st.image(image, caption="Your Uploaded Image", use_column_width=True)
-        with col2:
-            st.write("") # Just for spacing
+        # Show the uploaded image
+        st.image(image, caption="Your Uploaded Image", use_column_width=True, width=400)
 
         if st.button("Analyze Food"):
-            with st.spinner("🧠 AI is thinking... (running 2 models)"):
+            with st.spinner("🤖🤖 Running two models..."):
                 
-                # Run both models
-                label, conf = get_classification(classifier, image)
-                detected_image = get_detection_image(detector, image)
+                # Run both models on the same image
+                pro_label, pro_conf = get_pro_prediction(pro_model, image)
+                avg_label, avg_conf = get_avg_prediction(avg_model, image)
                 
-                # Display results in two new columns
                 st.write("---")
-                res_col1, res_col2 = st.columns(2)
+                col1, col2 = st.columns(2)
                 
-                with res_col1:
-                    st.header("1. Classification (What it is)")
+                # Column for the "Pro" 101-class model
+                with col1:
+                    st.header("1. 'Pro' 101-Class Model")
                     st.markdown(
                         f"""
                         <div class="result-box">
-                            <p>My top guess is:</p>
-                            <strong>{label}</strong>
-                            <p class="confidence">({conf:.2f}% confidence)</p>
+                            <p>It thinks the item is:</p>
+                            <strong>{pro_label}</strong>
+                            <p class="confidence">({pro_conf:.2f}% confidence)</p>
                         </div>
                         """,
                         unsafe_allow_html=True
                     )
 
-                with res_col2:
-                    st.header("2. Detection (Where it is)")
-                    st.image(detected_image, 
-                             caption="Detected objects (from YOLOv8)", 
-                             use_column_width=True)
+                # Column for "Your" 11-class model
+                with col2:
+                    st.header("2. 'Your Avg' 11-Class Model")
+                    st.markdown(
+                        f"""
+                        <div class="result-box">
+                            <p>It thinks the category is:</p>
+                            <strong>{avg_label}</strong>
+                            <p class="confidence">({avg_conf:.2f}% confidence)</p>
+                        </div>
+                        """,
+                        unsafe_allow_html=True
+                    )
 
 if __name__ == "__main__":
     main()
