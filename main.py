@@ -1,3 +1,16 @@
+import os
+import subprocess
+import sys
+
+# Streamlit Cloud + Ultralytics OpenCV fix
+try:
+    import cv2
+    # Check if we have the headless version or the full version by trying to load a GUI component
+    # Actually, a simpler way is just to see if it raises ImportError due to missing libgthread
+except ImportError:
+    subprocess.check_call([sys.executable, "-m", "pip", "uninstall", "-y", "opencv-python", "opencv-python-headless"])
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "opencv-python-headless"])
+
 import streamlit as st
 from transformers import pipeline
 from ultralytics import YOLO
