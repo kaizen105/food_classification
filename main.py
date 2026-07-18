@@ -50,7 +50,7 @@ def load_pro_classifier():
 @st.cache_resource
 def load_avg_classifier():
     print("--- Loading YOUR 'avg' (11-Class) Model ---")
-    model = YOLO('best_openvino_model/', task='classify')
+    model = YOLO('models/best_openvino_model/', task='classify')
     print("--- Your Model Loaded! ---")
     return model
 
